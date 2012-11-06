@@ -1,0 +1,36 @@
+# Compiled source #
+###################
+*.com
+*.class
+*.dll
+*.dll.mdb
+*.dll.config
+*.exe
+*.exe.mdb
+*.exe.config
+*.o
+*.so
+
+# Build Folders #
+#################
+bin/
+
+# OS generated files #
+######################
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Others #
+##########
+*.userprefs
+*.pidb
+
+# NUnit #
+#########
+test-results/
+
+# Include #
+###########
+
