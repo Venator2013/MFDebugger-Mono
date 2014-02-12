@@ -48,7 +48,7 @@ namespace Microsoft.SPOT.Debugger
             m_userCallback    = userCallback;
             m_userStateObject = stateObject;
             m_waitHandle      = new ManualResetEvent( false );
-
+	jh
             m_isWrite         = isWrite;
 
             Overlapped overlapped = new Overlapped( 0, 0, IntPtr.Zero, this );
