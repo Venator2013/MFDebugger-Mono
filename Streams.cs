@@ -18,6 +18,10 @@ using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 using System.Net;
 using System.Net.Sockets;
+using LibUsbDotNet.DeviceNotify;
+using LibUsbDotNet;
+using LibUsbDotNet.Main;
+using LibUsbDotNet.Info;
 
 namespace Microsoft.SPOT.Debugger
 {
@@ -128,7 +132,7 @@ namespace Microsoft.SPOT.Debugger
                     m_isComplete = true;
                 }
                 wh.Close();
-            }
+	}klj
         }
 
         internal NativeOverlapped* OverlappedPtr
@@ -891,435 +895,421 @@ namespace Microsoft.SPOT.Debugger
         }
     }
 
-    public class UsbDeviceDiscovery : IDisposable
-    {
-        public enum DeviceChanged : ushort
-        {
-            None          = 0,
-            Configuration = 1,
-            DeviceArrival = 2,
-            DeviceRemoval = 3,
-            Docking       = 4,
-        }
-
-        public delegate void DeviceChangedEventHandler( DeviceChanged change );
-
-#if REMOVED_CODE
-        private const string c_EventQuery    = "Win32_DeviceChangeEvent";
-        private const string c_InstanceQuery = "SELECT * FROM __InstanceOperationEvent WITHIN 5 WHERE TargetInstance ISA \"Win32_PnPEntity\"";
-
-        ManagementEventWatcher    m_eventWatcher;
-        DeviceChangedEventHandler m_subscribers;
-#endif
-
-        public UsbDeviceDiscovery()
-        {
-        }
-
-        ~UsbDeviceDiscovery()
-        {
-            try
-            {
-                Dispose();
-            }
-            catch
-            {
-            }
-        }
-
-        [MethodImplAttribute(MethodImplOptions.Synchronized)]
-        public void Dispose()
-        {
-#if REMOVED_CODE
-            if( m_eventWatcher != null )
-            {
-                m_eventWatcher.Stop();
-
-                m_eventWatcher = null;
-                m_subscribers = null;
-            }
-            GC.SuppressFinalize(this);
-#endif
-        }
-
-        // subscribing to this event allows applications to be notified when USB devices are plugged and unplugged
-        // as well as configuration changed and docking; upon receiving teh notification the applicaion can decide
-        // to call UsbDeviceDiscovery.EnumeratePorts to get an updated list of Usb devices
-        public event DeviceChangedEventHandler OnDeviceChanged
-        {
-            [MethodImplAttribute(MethodImplOptions.Synchronized)]
-            add
-            {
-#if REMOVED_CODE
-                try
-                {
-                    TryEventNotification( value );
-                }
-                catch
-                {
-                    TryInstanceNotification( value );
-                }
-#endif
-            }
-
-            [MethodImplAttribute(MethodImplOptions.Synchronized)]
-            remove
-            {
-#if REMOVED_CODE
-                m_subscribers -= value;
-
-                if(m_subscribers == null)
-                {
-                    if (m_eventWatcher != null)
-                    {                        
-                        m_eventWatcher.Stop();
-                        m_eventWatcher = null;
-                    }
-                }
-#endif
-            }
-        }
-
-#if REMOVED_CODE
-        private void TryEventNotification( DeviceChangedEventHandler handler )
-        {
-            m_eventWatcher = new ManagementEventWatcher( new WqlEventQuery( c_EventQuery  ) );
-                
-            m_eventWatcher.EventArrived += new EventArrivedEventHandler( HandleDeviceEvent ); 
-
-            if(m_subscribers == null)
-            {
-                m_eventWatcher.Start();
-            }
-
-            m_subscribers += handler;           
-        }
-
-        private void TryInstanceNotification( DeviceChangedEventHandler handler )
-        {
-            m_eventWatcher = new ManagementEventWatcher( new WqlEventQuery( c_InstanceQuery ) );
-
-            m_eventWatcher.EventArrived += new EventArrivedEventHandler( HandleDeviceInstance );  
-
-            if(m_subscribers == null)
-            {
-                m_eventWatcher.Start();
-            }
-
-            m_subscribers += handler;          
-        }
-
-        private void HandleDeviceEvent( object sender, EventArrivedEventArgs args )
-        {
-            if(m_subscribers != null)
-            {
-                ManagementBaseObject deviceEvent = args.NewEvent;
-
-                ushort eventType = (ushort)deviceEvent["EventType"];
-
-                m_subscribers( (DeviceChanged)eventType );
-            }
-        }
-
-        private void HandleDeviceInstance( object sender, EventArrivedEventArgs args )
-        {
-            if(m_subscribers != null)
-            {
-                ManagementBaseObject deviceEvent = args.NewEvent;
-
-                if(deviceEvent.ClassPath.ClassName.Equals( "__InstanceCreationEvent" ))
-                {
-                    m_subscribers( DeviceChanged.DeviceArrival );                    
-                }
-                else if(deviceEvent.ClassPath.ClassName.Equals( "__InstanceDeletionEvent" ))
-                {
-                    m_subscribers( DeviceChanged.DeviceRemoval );
-                }
-            }
-        }
-#endif
-    }
-
-    public class AsyncUsbStream
-    {
-        // mandatory property keys                 
-        static public readonly string DeviceHash = "DeviceHash";
-        static public readonly string DisplayName = "DisplayName";
-
-        public static PortDefinition[] EnumeratePorts()
-        {
-            SortedList lst = new SortedList();
-            ICollection col = lst.Values;
-            PortDefinition[] res = new PortDefinition[col.Count];
-
-            col.CopyTo(res, 0);
-
-            return res;
-        }
-
-        private static void EnumeratePorts(Guid inquiriesInterface, string driverVersion, SortedList lst)
-        {
-        }
-    }
-
-#if REMOVED_USB_STREAM
-    public class AsyncUsbStream : AsyncFileStream
-    {        
-        // IOCTL codes
-        private const int IOCTL_SPOTUSB_READ_AVAILABLE   = 0;
-        private const int IOCTL_SPOTUSB_DEVICE_HASH      = 1;
-        private const int IOCTL_SPOTUSB_MANUFACTURER     = 2;
-        private const int IOCTL_SPOTUSB_PRODUCT          = 3;
-        private const int IOCTL_SPOTUSB_SERIAL_NUMBER    = 4;
-        private const int IOCTL_SPOTUSB_VENDOR_ID        = 5;
-        private const int IOCTL_SPOTUSB_PRODUCT_ID       = 6;
-        private const int IOCTL_SPOTUSB_DISPLAY_NAME     = 7;
-        private const int IOCTL_SPOTUSB_PORT_NAME        = 8;
-
-        // paths
-        static readonly string SpotGuidKeyPath           = @"System\CurrentControlSet\Services\SpotUsb\Parameters";
-
-        // discovery keys
-        static public readonly string InquiriesInterface =  "InquiriesInterface";
-        static public readonly string DriverVersion      =  "DriverVersion";
-                                                       
-        // mandatory property keys                 
-        static public readonly string DeviceHash         =  "DeviceHash";
-        static public readonly string DisplayName        =  "DisplayName";
-
-        // optional property keys 
-        static public readonly string Manufacturer       = "Manufacturer";
-        static public readonly string Product            = "Product";
-        static public readonly string SerialNumber       = "SerialNumber";
-        static public readonly string VendorId           = "VendorId"; 
-        static public readonly string ProductId          = "ProductId";
-        
-        private const int c_DeviceStringBufferSize     = 260;
-
-        static private Hashtable s_textProperties;
-        static private Hashtable s_digitProperties;
-
-        static AsyncUsbStream()
-        {
-            s_textProperties  = new Hashtable();
-            s_digitProperties = new Hashtable();
-
-            s_textProperties.Add( DeviceHash  , IOCTL_SPOTUSB_DEVICE_HASH   );
-            s_textProperties.Add( Manufacturer, IOCTL_SPOTUSB_MANUFACTURER  );
-            s_textProperties.Add( Product     , IOCTL_SPOTUSB_PRODUCT       );
-            s_textProperties.Add( SerialNumber, IOCTL_SPOTUSB_SERIAL_NUMBER );  
-            
-            s_digitProperties.Add( VendorId   , IOCTL_SPOTUSB_VENDOR_ID     );
-            s_digitProperties.Add( ProductId  , IOCTL_SPOTUSB_PRODUCT_ID    );   
-        }
-
-        public AsyncUsbStream( string port ) : base( port, System.IO.FileShare.None )
-        {
-        }
-
-        public unsafe override int AvailableCharacters
-        {
-            get
-            {
-                int code = Native.ControlCode( Native.FILE_DEVICE_UNKNOWN, 0, Native.METHOD_BUFFERED, Native.FILE_ANY_ACCESS );
-                int avail;
-                int read;
-
-                if(!Native.DeviceIoControl( m_handle.DangerousGetHandle(), code, null, IOCTL_SPOTUSB_READ_AVAILABLE, (byte*)&avail, sizeof(int), out read, null ) || read != sizeof(int))
-                {
-                    return 0;
-                }
-
-                return avail;
-            }
-        }
-
-        public static PortDefinition[] EnumeratePorts()
-        {
-            SortedList lst = new SortedList();
-
-            // enumerate each guid under the discovery key
-            RegistryKey driverParametersKey = Registry.LocalMachine.OpenSubKey( SpotGuidKeyPath );
-
-            // if no parameters key is found, it means that no USB device has ever been plugged into the host 
-            // or no driver was installed
-            if(driverParametersKey != null)
-            {
-                string inquiriesInterfaceGuid   = (string)driverParametersKey.GetValue( InquiriesInterface   );
-                string driverVersion            = (string)driverParametersKey.GetValue( DriverVersion        );
-            
-                if((inquiriesInterfaceGuid != null) && (driverVersion != null))
-                {
-                    EnumeratePorts( new Guid( inquiriesInterfaceGuid ), driverVersion, lst ); 
-                }
-            }
-
-            ICollection      col = lst.Values;
-            PortDefinition[] res = new PortDefinition[col.Count];
-
-            col.CopyTo( res, 0 );
-
-            return res;
-        }
-
-
-        // The following procedure works with the USB device driver; upon finding all instances of USB devices
-        // that match the requested Guid, the procedure checks the corresponding registry keys to find the unique
-        // serial number to show to the user; the serial number is decided by the device driver at installation
-        // time and stored in a registry key whose name is the hash of the laser etched security key of the device
-        private static void EnumeratePorts( Guid inquiriesInterface, string driverVersion, SortedList lst )
-        {
-            IntPtr devInfo = Native.SetupDiGetClassDevs( ref inquiriesInterface, null, 0, Native.DIGCF_DEVICEINTERFACE | Native.DIGCF_PRESENT );
-
-            if(devInfo == Native.INVALID_HANDLE_VALUE)
-            {
-                return;
-            }
-
-            Native.SP_DEVICE_INTERFACE_DATA interfaceData = new Native.SP_DEVICE_INTERFACE_DATA(); interfaceData.cbSize = Marshal.SizeOf(interfaceData);
-            
-            int index = 0;
-
-            while(Native.SetupDiEnumDeviceInterfaces( devInfo, 0, ref inquiriesInterface, index++, ref interfaceData ))
-            {
-                Native.SP_DEVICE_INTERFACE_DETAIL_DATA detail = new Native.SP_DEVICE_INTERFACE_DETAIL_DATA();
-                // explicit size of unmanaged structure must be provided, because it does not include transfer buffer
-                // for whatever reason on 64 bit machines the detail size is 8 rather than 5, likewise the interfaceData.cbSize
-                // is 32 rather than 28 for non 64bit machines, therefore, we make the detemination of the size based 
-                // on the interfaceData.cbSize (kind of hacky but it works).
-                if( interfaceData.cbSize == 32 )
-                {
-                    detail.cbSize = 8;
-                }
-                else
-                {
-                    detail.cbSize = 5;
-                }
-                
-
-                if(Native.SetupDiGetDeviceInterfaceDetail( devInfo, ref interfaceData, ref detail, Marshal.SizeOf(detail) * 2, 0, 0 ))
-                {
-                    string port = detail.DevicePath.ToLower();
-
-                    AsyncUsbStream s = null;
-
-                    try
-                    {
-                        s = new AsyncUsbStream( port );
-
-                        string displayName     = s.RetrieveStringFromDevice( IOCTL_SPOTUSB_DISPLAY_NAME ); 
-                        string hash            = s.RetrieveStringFromDevice( IOCTL_SPOTUSB_DEVICE_HASH  ); 
-                        string operationalPort = s.RetrieveStringFromDevice( IOCTL_SPOTUSB_PORT_NAME    ); 
-
-                        if((operationalPort == null) || (displayName == null) || (hash == null))
-                        {
-                            continue;
-                        }
-
-                        // convert  kernel format to user mode format                        
-                        // kernel   : @"\??\USB#Vid_beef&Pid_0009#5&4162af8&0&1#{09343630-a794-10ef-334f-82ea332c49f3}"
-                        // user     : @"\\?\usb#vid_beef&pid_0009#5&4162af8&0&1#{09343630-a794-10ef-334f-82ea332c49f3}"
-                        StringBuilder operationalPortUser = new StringBuilder();
-                        operationalPortUser.Append( @"\\?" );
-                        operationalPortUser.Append( operationalPort.Substring( 3 ) );
-
-                        // change the display name if there is a collision (otherwise you will only be able to use one of the devices)
-                        displayName += "_" + hash;
-                        if (lst.ContainsKey(displayName))
-                        {
-                            int i = 2;
-                            while (lst.ContainsKey(displayName + " (" + i + ")"))
-                            {
-                                i++;
-                            }
-                            displayName += " (" + i + ")";
-                        }
-
-                        PortDefinition pd  = PortDefinition.CreateInstanceForUsb( displayName, operationalPortUser.ToString() );
-                        
-                        RetrieveProperties( hash, ref pd, s );
-
-                        lst.Add( pd.DisplayName, pd );
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        if(s != null) s.Close();
-                    }
-                }
-            }
-
-            Native.SetupDiDestroyDeviceInfoList( devInfo );
-        }
-        
-        private static void RetrieveProperties( string hash, ref PortDefinition pd, AsyncUsbStream s )
-        {
-            IDictionaryEnumerator dict;
-            
-            dict = s_textProperties.GetEnumerator();
-
-            while(dict.MoveNext())
-            {
-                pd.Properties.Add( dict.Key, s.RetrieveStringFromDevice( (int)dict.Value ) );
-            }
-
-            dict = s_digitProperties.GetEnumerator();
-            
-            while(dict.MoveNext())
-            {
-                pd.Properties.Add( dict.Key, s.RetrieveIntegerFromDevice( (int)dict.Value ) );
-            }
-        }
-
-        private unsafe string RetrieveStringFromDevice( int controlCode )
-        {
-            int code = Native.ControlCode( Native.FILE_DEVICE_UNKNOWN, controlCode, Native.METHOD_BUFFERED, Native.FILE_ANY_ACCESS );
-            
-            string data;
-            int read; 
-            byte[] buffer = new byte[ c_DeviceStringBufferSize ];
-
-            fixed(byte* p = buffer)
-            {
-                if(!Native.DeviceIoControl( m_handle.DangerousGetHandle(), code, null, 0, p, buffer.Length, out read, null ) || (read <= 0))
-                {
-                    data = null;
-                }
-                else
-                {
-                    if(read > (c_DeviceStringBufferSize-2))
-                    {
-                        read = c_DeviceStringBufferSize-2;
-                    }
-
-                    p[read  ] = 0;
-                    p[read+1] = 0;
-
-                    data = new string( (char *)p );
-                }
-            }
-
-            return data;
-        }
-
-        private unsafe int RetrieveIntegerFromDevice( int controlCode )
-        {
-            int code = Native.ControlCode( Native.FILE_DEVICE_UNKNOWN, controlCode, Native.METHOD_BUFFERED, Native.FILE_ANY_ACCESS );
-            
-            int read; 
-            int digits = 0;
-
-            if(!Native.DeviceIoControl( m_handle.DangerousGetHandle(), code, null, 0, (byte*)&digits, sizeof(int), out read, null ) || (read <= 0))
-            {
-                digits = -1;
-            }
-
-            return digits;
-        }
-    }
-#endif
+public class UsbDeviceDiscovery : IDisposable
+{
+	public enum DeviceChanged : ushort
+	{
+		None = 0,
+		Configuration = 1,
+		DeviceArrival = 2,
+		DeviceRemoval = 3,
+		Docking = 4,
+	}
+
+	public delegate void DeviceChangedEventHandler (DeviceChanged change);
+
+	IDeviceNotifier m_UsbDeviceNotifier;
+	DeviceChangedEventHandler m_subscribers;
+
+	public UsbDeviceDiscovery ()
+	{
+
+	}
+
+	~UsbDeviceDiscovery ()
+	{
+		try
+		{
+			Dispose ();
+		} catch
+		{
+		}
+	}
+
+	[MethodImplAttribute (MethodImplOptions.Synchronized)]
+	public void Dispose ()
+	{
+
+
+		if (m_UsbDeviceNotifier != null)
+		{
+			m_UsbDeviceNotifier = null;
+			m_subscribers = null;
+		}
+		GC.SuppressFinalize (this);
+
+	}
+	// subscribing to this event allows applications to be notified when USB devices are plugged and unplugged
+	// as well as configuration changed and docking; upon receiving teh notification the applicaion can decide
+	// to call UsbDeviceDiscovery.EnumeratePorts to get an updated list of Usb devices
+	public event DeviceChangedEventHandler OnDeviceChanged
+	{
+		[MethodImplAttribute(MethodImplOptions.Synchronized)]
+		add
+		{
+			TryInstanceNotification (value);
+		}
+
+		[MethodImplAttribute(MethodImplOptions.Synchronized)]
+		remove
+		{
+
+			m_subscribers -= value;
+
+			if (m_subscribers == null)
+			{
+				if (m_UsbDeviceNotifier != null)
+				{                        
+					m_UsbDeviceNotifier = null;
+				}
+			}
+
+		}
+	}
+
+	private void TryInstanceNotification (DeviceChangedEventHandler handler)
+	{
+		m_UsbDeviceNotifier = DeviceNotifier.OpenDeviceNotifier ();
+		m_UsbDeviceNotifier.OnDeviceNotify += new EventHandler<DeviceNotifyEventArgs> (HandleDeviceInstance); 
+		m_subscribers += handler;     
+	}
+
+	private void HandleDeviceInstance (object sender, DeviceNotifyEventArgs args)
+	{	
+		if (m_subscribers != null)
+		{
+
+			EventType deviceEvent = args.EventType;
+
+			if (deviceEvent.Equals (EventType.DeviceArrival))
+			{
+				m_subscribers (DeviceChanged.DeviceArrival);                    
+			} else if (deviceEvent.Equals (EventType.DeviceRemoveComplete))
+			{
+				m_subscribers (DeviceChanged.DeviceRemoval);
+			}
+		}
+	}
+}
+
+
+public class AsyncUsbStream :System.IO.Stream, IDisposable, WireProtocol.IStreamAvailableCharacters
+{
+	// IOCTL codes
+	private const int IOCTL_SPOTUSB_READ_AVAILABLE = 0;
+	private const int IOCTL_SPOTUSB_DEVICE_HASH = 1;
+	private const int IOCTL_SPOTUSB_MANUFACTURER = 2;
+	private const int IOCTL_SPOTUSB_PRODUCT = 3;
+	private const int IOCTL_SPOTUSB_SERIAL_NUMBER = 4;
+	private const int IOCTL_SPOTUSB_VENDOR_ID = 5;
+	private const int IOCTL_SPOTUSB_PRODUCT_ID = 6;
+	private const int IOCTL_SPOTUSB_DISPLAY_NAME = 7;
+	private const int IOCTL_SPOTUSB_PORT_NAME = 8;
+	// paths
+	static readonly string SpotGuidKeyPath = @"System\CurrentControlSet\Services\SpotUsb\Parameters";
+	// discovery keys
+	static public readonly string InquiriesInterface = "InquiriesInterface";
+	static public readonly string DriverVersion = "DriverVersion";
+	// mandatory property keys
+	static public readonly string DeviceHash = "DeviceHash";
+	static public readonly string DisplayName = "DisplayName";
+	// optional property keys
+	static public readonly string Manufacturer = "Manufacturer";
+	static public readonly string Product = "Product";
+	static public readonly string SerialNumber = "SerialNumber";
+	static public readonly string VendorId = "VendorId";
+	static public readonly string ProductId = "ProductId";
+	private const int c_DeviceStringBufferSize = 260;
+	static private Hashtable s_textProperties;
+	static private Hashtable s_digitProperties;
+	static private UsbDevice device = null;
+	static private UsbEndpointReader reader = null;
+	static private UsbEndpointWriter writer = null;
+	static private Queue<byte[]> reciveQueue;
+
+	static AsyncUsbStream ()
+	{
+		s_textProperties = new Hashtable ();
+		s_digitProperties = new Hashtable ();
+
+		s_textProperties.Add (DeviceHash, IOCTL_SPOTUSB_DEVICE_HASH);
+		s_textProperties.Add (Manufacturer, IOCTL_SPOTUSB_MANUFACTURER);
+		s_textProperties.Add (Product, IOCTL_SPOTUSB_PRODUCT);
+		s_textProperties.Add (SerialNumber, IOCTL_SPOTUSB_SERIAL_NUMBER);  
+
+		s_digitProperties.Add (VendorId, IOCTL_SPOTUSB_VENDOR_ID);
+		s_digitProperties.Add (ProductId, IOCTL_SPOTUSB_PRODUCT_ID);   
+	}
+
+	public AsyncUsbStream (String port)
+	{
+		Console.WriteLine ("Create AsyncUSB");
+		int vid = Convert.ToInt16 (port.Split (new char[]{ ':' }) [0]);
+		int pid = Convert.ToInt16 (port.Split (new char[]{ ':' }) [1]);
+
+
+
+		UsbDeviceFinder netduinoFinder = new UsbDeviceFinder (vid, pid);
+
+		if (device == null)
+			device = UsbDevice.OpenUsbDevice (netduinoFinder);
+
+		if (device == null)
+		{
+			Console.WriteLine ("Cant open USB Device");
+		}
+
+
+
+		if (device.IsOpen)
+		{
+			if (writer == null)
+			{
+				reciveQueue = new Queue<byte[]> ();
+				UsbConfigInfo configInfo = device.Configs [0];
+				UsbInterfaceInfo interfaceInfo = configInfo.InterfaceInfoList [0];
+
+				IUsbDevice wholeUsbDevice = device as IUsbDevice;
+				if (!ReferenceEquals (wholeUsbDevice, null))
+				{
+					// This is a "whole" USB device. Before it can be used, 
+					// the desired configuration and interface must be selected.
+
+					// Select config #1
+					wholeUsbDevice.SetConfiguration (configInfo.Descriptor.ConfigID);
+
+					// Claim interface #0.
+					wholeUsbDevice.ClaimInterface (interfaceInfo.Descriptor.InterfaceID);
+				}
+
+				UsbEndpointInfo EP1 = interfaceInfo.EndpointInfoList [1];
+				writer = device.OpenEndpointWriter ((WriteEndpointID)EP1.Descriptor.EndpointID);
+
+				UsbEndpointInfo EP2 = interfaceInfo.EndpointInfoList [0];
+				reader = device.OpenEndpointReader ((ReadEndpointID)EP2.Descriptor.EndpointID);
+				reader.DataReceived += new EventHandler<EndpointDataEventArgs> (OnDataReceive);
+				reader.DataReceivedEnabled = true;
+			}
+		}
+
+	}
+
+	[MethodImpl(MethodImplOptions.Synchronized)]
+	private void OnDataReceive (object sender, EndpointDataEventArgs e)
+	{
+		Console.WriteLine ("Receive << " + Encoding.Default.GetString (e.Buffer, 0, e.Count));
+		Console.WriteLine (reciveQueue.Count);
+		byte[] temp = new byte[e.Count];
+		Array.Copy (e.Buffer, temp, e.Count);
+		reciveQueue.Enqueue (temp);
+	}
+
+	~AsyncUsbStream ()
+	{
+
+	}
+
+	public static PortDefinition[] EnumeratePorts ()
+	{
+		SortedList lst = new SortedList ();
+
+		EnumeratePorts (new Guid (), "2", lst); 
+
+		ICollection col = lst.Values;
+		PortDefinition[] res = new PortDefinition[col.Count];
+
+		col.CopyTo (res, 0);
+		return res;
+	}
+
+	private static void EnumeratePorts (Guid inquiriesInterface, string driverVersion, SortedList lst)
+	{
+		UsbRegDeviceList allDevices = UsbDevice.AllDevices;
+		UsbDeviceFinder netduinoFinder = new UsbDeviceFinder (8881, 4097);
+		UsbRegistry usbRegistry = allDevices.Find (netduinoFinder);
+		UsbDevice tempDevice;
+		if (usbRegistry.Open (out tempDevice))
+		{
+
+			AsyncUsbStream s = null;
+
+			s = new AsyncUsbStream ("8881:4097");
+
+			string displayName = s.RetrieveStringFromDevice (IOCTL_SPOTUSB_DISPLAY_NAME); 
+			string hash = s.RetrieveStringFromDevice (IOCTL_SPOTUSB_DEVICE_HASH); 
+			string operationalPort = s.RetrieveStringFromDevice (IOCTL_SPOTUSB_PORT_NAME); 
+
+			if (!((operationalPort == null) || (displayName == null) || (hash == null)))
+			{
+				PortDefinition pd = PortDefinition.CreateInstanceForUsb (displayName, operationalPort.ToString ());
+				RetrieveProperties (hash, ref pd, s);
+				lst.Add (pd.DisplayName, pd);
+			}
+
+		}
+
+	}
+
+	private static void RetrieveProperties (string hash, ref PortDefinition pd, AsyncUsbStream s)
+	{
+		IDictionaryEnumerator dict;
+
+		dict = s_textProperties.GetEnumerator ();
+		while (dict.MoveNext ())
+		{
+			pd.Properties.Add (dict.Key, s.RetrieveStringFromDevice ((int)dict.Value));
+		}
+
+		dict = s_digitProperties.GetEnumerator ();
+		while (dict.MoveNext ())
+		{
+			pd.Properties.Add (dict.Key, s.RetrieveIntegerFromDevice ((int)dict.Value));
+		}
+	}
+
+	private unsafe int RetrieveIntegerFromDevice (int controlCode)
+	{
+
+		switch (controlCode)
+		{
+			case IOCTL_SPOTUSB_VENDOR_ID:
+				return 8881;
+			case IOCTL_SPOTUSB_PRODUCT_ID:
+				return 4097;
+		}
+
+		return 0;
+	}
+
+	private string RetrieveStringFromDevice (int controlCode)
+	{
+
+		switch (controlCode)
+		{
+			case IOCTL_SPOTUSB_DISPLAY_NAME:
+				return device.Info.ProductString;
+			case IOCTL_SPOTUSB_DEVICE_HASH:
+				return string.Format ("{0}:{1}", 8881, 4097);
+			case IOCTL_SPOTUSB_PORT_NAME:
+				return string.Format ("{0}:{1}", 8881, 4097);
+			case IOCTL_SPOTUSB_MANUFACTURER:
+				return device.Info.ManufacturerString;
+			case IOCTL_SPOTUSB_PRODUCT:
+				return device.Info.ProductString;
+			case IOCTL_SPOTUSB_SERIAL_NUMBER:
+				return device.Info.SerialString;
+		}
+
+		return "";
+	}
+
+	public override bool CanRead
+	{
+		get { return true; }
+	}
+
+	public override bool CanSeek
+	{
+		get { return false; }
+	}
+
+	public override bool CanWrite
+	{
+		get { return true; }
+	}
+
+	public override long Length
+	{
+		get { throw NotImplemented (); }
+	}
+
+	public override long Position
+	{
+		get { throw NotImplemented (); }
+		set { throw NotImplemented (); }
+	}
+
+	private Exception NotImplemented ()
+	{
+		return new NotSupportedException ("Not Supported");
+	}
+
+	public override void Flush ()
+	{
+		throw NotImplemented ();
+	}
+
+	[MethodImpl(MethodImplOptions.Synchronized)]
+	public override int Read (byte[] buffer, int offset, int count)
+	{
+
+		byte[] tempb = reciveQueue.Dequeue ();
+		Array.Copy (tempb, buffer, tempb.Length);
+
+		return tempb.Length;
+
+	}
+
+	public override long Seek (long offset, SeekOrigin origin)
+	{
+		throw NotImplemented ();
+	}
+
+	public override void SetLength (long value)
+	{
+		throw NotImplemented ();
+	}
+
+	public override void Write (byte[] buffer, int offset, int count)
+	{
+		try
+		{
+
+			ErrorCode ec = ErrorCode.None;
+			// If this is a "whole" usb device (libusb-win32, linux libusb)
+			// it will have an IUsbDevice interface. If not (WinUSB) the 
+			// variable will be null indicating this is an interface of a 
+			// device.
+
+			int bytesWritten;
+
+			ec = writer.Write (buffer, 1000, out bytesWritten);
+			Console.WriteLine ("Send >> " + Encoding.Default.GetString (buffer, 0, bytesWritten));
+			if (ec != ErrorCode.None)
+			{
+				throw new Exception (UsbDevice.LastErrorString);
+			}
+
+
+		} catch (Exception e)
+		{
+			Console.WriteLine (e.Message);
+		}
+
+
+
+	}
+
+
+	public virtual int AvailableCharacters
+	{
+		get
+		{
+			lock (reciveQueue)
+			{
+				if (reciveQueue.Count > 0)
+				{
+					Console.WriteLine ("Number of bytes " + reciveQueue.Peek ().Length);
+					return reciveQueue.Peek ().Length;
+				} else
+				{
+					return 0;
+				}
+			}
+
+		}
+	}
+}
 
     [Serializable]
     public class PortDefinition_Usb : PortDefinition

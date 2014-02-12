@@ -39,6 +39,9 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Management" />
     <Reference Include="System.Xml" />
+    <Reference Include="LibUsbDotNet">
+      <HintPath>..\..\libusbdotnet\stage\bin\Release\LibUsbDotNet.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AbortHandler.cs" />
